@@ -1,16 +1,28 @@
-// index.js
 const express = require("express");
 const puppeteer = require("puppeteer");
+const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// health check
+// helper to guess chrome path on Render
+function getChromePath() {
+  // 1) env override (we can set this in Render later if we want)
+  if (process.env.CHROME_PATH) {
+    return process.env.CHROME_PATH;
+  }
+
+  // 2) common Render path for Puppeteer
+  //   based on the error message you got
+  const renderPath = "/opt/render/.cache/puppeteer/chrome/linux-142.0.7444.59/chrome-linux64/chrome";
+
+  return renderPath;
+}
+
 app.get("/", (req, res) => {
   res.send("Puppeteer render service is running.");
 });
 
-// main endpoint: /render?url=https://example.com
 app.get("/render", async (req, res) => {
   const url = req.query.url;
   if (!url) {
@@ -19,8 +31,11 @@ app.get("/render", async (req, res) => {
 
   let browser;
   try {
+    const executablePath = getChromePath();
+
     browser = await puppeteer.launch({
       headless: true,
+      executablePath, // 👈 force puppeteer to use Render’s chrome
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
@@ -32,14 +47,16 @@ app.get("/render", async (req, res) => {
 
     const page = await browser.newPage();
 
-    // pretend to be Googlebot
+    await page.setDefaultNavigationTimeout(60000);
+    await page.setDefaultTimeout(60000);
+
     await page.setUserAgent(
       "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
     );
 
     await page.goto(url, {
-    waitUntil: "networkidle2", // less strict
-    timeout: 60000, // 60 seconds
+      waitUntil: "networkidle2",
+      timeout: 60000,
     });
 
     const html = await page.content();
@@ -56,7 +73,7 @@ app.get("/render", async (req, res) => {
       html,
     });
   } catch (err) {
-    console.error(err);
+    console.error("RENDER PUPPETEER ERROR →", err);
     res.status(500).json({ ok: false, error: err.message });
   } finally {
     if (browser) {
