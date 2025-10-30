@@ -1,13 +1,12 @@
 const express = require("express");
 const puppeteer = require("puppeteer");
-const fs = require("fs");
-const path = require("path");
-
+const fs = require("fs"); // 👈 Added 'fs' module for file system operations
+const path = require("path"); // 👈 Added 'path' module
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 function resolveChromePath() {
-  // 1) if user set it in env, prefer that
+  // 1) if user set it in env, prefer that (CHROME_PATH)
   if (process.env.CHROME_PATH) {
     return process.env.CHROME_PATH;
   }
@@ -17,27 +16,37 @@ function resolveChromePath() {
   const chromeRoot = path.join(baseDir, "chrome");
 
   try {
-    // e.g. /opt/render/.cache/puppeteer/chrome
-    const versions = fs.readdirSync(chromeRoot, { withFileTypes: true })
+    // Read the version folders inside /opt/render/.cache/puppeteer/chrome
+    const versionDirs = fs.readdirSync(chromeRoot, { withFileTypes: true })
       .filter(d => d.isDirectory())
-      .map(d => d.name);
+      .map(d => d.name); // e.g., ['linux-142.0.7444.59']
 
     // pick the first version we find
-    if (versions.length > 0) {
-      const versionDir = versions[0]; // e.g. linux-142.0.7444.59
+    if (versionDirs.length > 0) {
+      const versionDirName = versionDirs[0]; // e.g. 'linux-142.0.7444.59'
+      
+      // The path to the executable is likely: 
+      // /opt/render/.cache/puppeteer/chrome/linux-142.0.7444.59/chrome-linux64/chrome
+      // (This is the most common correct path for Puppeteer on Linux containers)
       const candidate = path.join(
         chromeRoot,
-        versionDir,
+        versionDirName,
         "chrome-linux64",
         "chrome"
       );
-      return candidate;
+      
+      // Check if the file actually exists before returning the path
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
     }
   } catch (err) {
+    // This logs if the base directory doesn't exist, which is fine if Puppeteer
+    // is configured to use a different cache, but helpful for debugging.
     console.log("Could not scan Render puppeteer dir:", err.message);
   }
 
-  // 3) fallback: let Puppeteer decide
+  // 3) fallback: let Puppeteer decide (or fail cleanly)
   return null;
 }
 
@@ -54,7 +63,7 @@ app.get("/render", async (req, res) => {
   let browser;
   try {
     const chromePath = resolveChromePath();
-    console.log("Using chrome path:", chromePath);
+    console.log("Using chrome path:", chromePath); // 👈 Helpful logging!
 
     const launchOpts = {
       headless: true,
@@ -65,6 +74,8 @@ app.get("/render", async (req, res) => {
         "--disable-gpu",
         "--no-zygote",
       ],
+      // Add a higher timeout for Render's first-launch
+      timeout: 120000, 
     };
 
     // only set executablePath if we actually found one
@@ -76,6 +87,7 @@ app.get("/render", async (req, res) => {
 
     const page = await browser.newPage();
 
+    // Keep your existing timeouts and user agent settings...
     await page.setDefaultNavigationTimeout(60000);
     await page.setDefaultTimeout(60000);
 
@@ -87,6 +99,7 @@ app.get("/render", async (req, res) => {
       waitUntil: "networkidle2",
       timeout: 60000,
     });
+    // ... (rest of the page content retrieval and response)
 
     const html = await page.content();
     const title = await page.title();
