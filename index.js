@@ -1,22 +1,44 @@
 const express = require("express");
 const puppeteer = require("puppeteer");
+const fs = require("fs");
 const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// helper to guess chrome path on Render
-function getChromePath() {
-  // 1) env override (we can set this in Render later if we want)
+function resolveChromePath() {
+  // 1) if user set it in env, prefer that
   if (process.env.CHROME_PATH) {
     return process.env.CHROME_PATH;
   }
 
-  // 2) common Render path for Puppeteer
-  //   based on the error message you got
-  const renderPath = "/opt/render/.cache/puppeteer/chrome/linux-142.0.7444.59/chrome-linux64/chrome";
+  // 2) try to discover it in Render's cache
+  const baseDir = "/opt/render/.cache/puppeteer";
+  const chromeRoot = path.join(baseDir, "chrome");
 
-  return renderPath;
+  try {
+    // e.g. /opt/render/.cache/puppeteer/chrome
+    const versions = fs.readdirSync(chromeRoot, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => d.name);
+
+    // pick the first version we find
+    if (versions.length > 0) {
+      const versionDir = versions[0]; // e.g. linux-142.0.7444.59
+      const candidate = path.join(
+        chromeRoot,
+        versionDir,
+        "chrome-linux64",
+        "chrome"
+      );
+      return candidate;
+    }
+  } catch (err) {
+    console.log("Could not scan Render puppeteer dir:", err.message);
+  }
+
+  // 3) fallback: let Puppeteer decide
+  return null;
 }
 
 app.get("/", (req, res) => {
@@ -31,11 +53,11 @@ app.get("/render", async (req, res) => {
 
   let browser;
   try {
-    const executablePath = getChromePath();
+    const chromePath = resolveChromePath();
+    console.log("Using chrome path:", chromePath);
 
-    browser = await puppeteer.launch({
+    const launchOpts = {
       headless: true,
-      executablePath, // 👈 force puppeteer to use Render’s chrome
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
@@ -43,7 +65,14 @@ app.get("/render", async (req, res) => {
         "--disable-gpu",
         "--no-zygote",
       ],
-    });
+    };
+
+    // only set executablePath if we actually found one
+    if (chromePath) {
+      launchOpts.executablePath = chromePath;
+    }
+
+    browser = await puppeteer.launch(launchOpts);
 
     const page = await browser.newPage();
 
