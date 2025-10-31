@@ -1,16 +1,22 @@
 {
   "name": "puppeteer-renderer",
   "version": "1.0.0",
+  "description": "Puppeteer render service for bots (Render.com)",
   "main": "index.js",
   "scripts": {
+    "start": "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "keywords": [
+    "puppeteer",
+    "render",
+    "chromium",
+    "prerender"
+  ],
   "author": "",
   "license": "ISC",
-  "description": "",
   "dependencies": {
-    "express": "^5.1.0",
+    "express": "^4.19.2",
     "puppeteer-core": "^24.27.0",
     "@sparticuz/chromium": "^141.0.0"
   }
